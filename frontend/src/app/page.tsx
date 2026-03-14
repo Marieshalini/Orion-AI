@@ -1,0 +1,829 @@
+"use client";
+
+import { useState, useRef, useEffect, useCallback } from "react";
+import {
+  Sparkles, Play, RotateCcw, ChevronRight, Zap,
+  TrendingUp, Shield, Target, Cog, Brain,
+  Star, AlertCircle, CheckCircle2, Loader2,
+} from "lucide-react";
+import { formatCurrency } from "@/lib/utils";
+
+const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+
+// ── Types ─────────────────────────────────────────────────────────────────────
+interface BusinessInput {
+  revenue: number;
+  marketing_budget: number;
+  employees: number;
+  main_problem: string;
+}
+
+interface AgentMessage {
+  id: string;
+  name: string;
+  emoji: string;
+  color: string;
+  content: string;
+  streaming: boolean;
+}
+
+type AppStep = "input" | "questions" | "simulation" | "result";
+
+const AGENT_CONFIG = {
+  sales:      { name: "Sales Agent",      emoji: "📈", color: "#a855f7", icon: TrendingUp, label: "Growth & Revenue" },
+  marketing:  { name: "Marketing Agent",  emoji: "🎯", color: "#c084fc", icon: Target,     label: "Acquisition & Brand" },
+  finance:    { name: "Finance Agent",    emoji: "💎", color: "#e879f9", icon: Shield,     label: "Risk & Cash Flow" },
+  operations: { name: "Operations Agent", emoji: "⚡", color: "#7c3aed", icon: Cog,        label: "Execution & Scale" },
+} as const;
+
+// ── Star field ────────────────────────────────────────────────────────────────
+// Stars are generated ONLY on the client (inside useEffect) to prevent the
+// SSR/client hydration mismatch caused by Math.random() differing server vs browser.
+interface StarData {
+  id: number; x: number; y: number; size: number;
+  dur: string; delay: string; op: string;
+}
+
+function StarField() {
+  const [stars, setStars] = useState<StarData[]>([]);
+
+  useEffect(() => {
+    setStars(
+      Array.from({ length: 120 }, (_, i) => ({
+        id: i,
+        x: Math.random() * 100,
+        y: Math.random() * 100,
+        size: Math.random() * 2 + 0.5,
+        dur: (Math.random() * 4 + 2).toFixed(1),
+        delay: (Math.random() * 5).toFixed(1),
+        op: (Math.random() * 0.6 + 0.2).toFixed(2),
+      }))
+    );
+  }, []);
+
+  return (
+    <div className="stars">
+      {stars.map((s) => (
+        <div key={s.id} className="star" style={{
+          left: `${s.x}%`, top: `${s.y}%`,
+          width: `${s.size}px`, height: `${s.size}px`,
+          "--dur": `${s.dur}s`, "--delay": `${s.delay}s`, "--max-op": s.op,
+        } as React.CSSProperties} />
+      ))}
+    </div>
+  );
+}
+
+// ── Orion Logo ────────────────────────────────────────────────────────────────
+function OrionLogo({ size = 48 }: { size?: number }) {
+  return (
+    <div className="relative" style={{ width: size, height: size }}>
+      <div className="orion-ring absolute inset-0" style={{ width: size, height: size }} />
+      <div className="orion-ring absolute" style={{
+        width: size * 0.65, height: size * 0.65,
+        top: size * 0.175, left: size * 0.175, animationDelay: "0.5s",
+      }} />
+      <div className="absolute flex items-center justify-center" style={{ inset: 0 }}>
+        <Star className="fill-current" style={{ width: size * 0.38, height: size * 0.38, color: "#c084fc" }} />
+      </div>
+    </div>
+  );
+}
+
+// ── Step badge ────────────────────────────────────────────────────────────────
+function StepBadge({ step, current }: { step: number; current: number }) {
+  const done = current > step;
+  const active = current === step;
+  return (
+    <div className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-mono font-bold transition-all duration-300"
+      style={{
+        background: done ? "linear-gradient(135deg,#7c3aed,#a855f7)" : active ? "rgba(139,92,246,0.25)" : "rgba(13,0,33,0.8)",
+        border: active ? "1px solid rgba(168,85,247,0.7)" : done ? "none" : "1px solid rgba(139,92,246,0.2)",
+        color: done ? "white" : active ? "#c084fc" : "rgba(196,181,253,0.4)",
+        boxShadow: active ? "0 0 16px rgba(168,85,247,0.4)" : "none",
+      }}>
+      {done ? <CheckCircle2 size={14} /> : step}
+    </div>
+  );
+}
+
+// ── Agent chat bubble ─────────────────────────────────────────────────────────
+function AgentBubble({ msg }: { msg: AgentMessage }) {
+  const parts = msg.content.split(/(\*\*[^*]+\*\*)/g);
+  return (
+    <div className="agent-bubble flex gap-3 items-start">
+      <div className="flex-shrink-0 w-10 h-10 rounded-xl flex items-center justify-center text-lg"
+        style={{ background: `${msg.color}15`, border: `1px solid ${msg.color}35`, boxShadow: `0 0 16px ${msg.color}15` }}>
+        {msg.emoji}
+      </div>
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2 mb-1.5">
+          <span className="text-xs font-mono font-bold" style={{ color: msg.color }}>{msg.name}</span>
+          <span className="text-xs opacity-40 font-mono">
+            {AGENT_CONFIG[msg.id as keyof typeof AGENT_CONFIG]?.label}
+          </span>
+        </div>
+        <div className="rounded-xl px-4 py-3 text-sm leading-relaxed"
+          style={{ background: `${msg.color}08`, border: `1px solid ${msg.color}20` }}>
+          {parts.map((p, i) =>
+            p.startsWith("**") && p.endsWith("**")
+              ? <strong key={i} style={{ color: msg.color, fontWeight: 600 }}>{p.slice(2, -2)}</strong>
+              : <span key={i}>{p}</span>
+          )}
+          {msg.streaming && <span className="blink-cursor" />}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Typing dots ───────────────────────────────────────────────────────────────
+function TypingDots({ name, color }: { name: string; color: string }) {
+  return (
+    <div className="flex items-center gap-2 px-2 py-1">
+      <span className="text-xs font-mono" style={{ color }}>{name}</span>
+      <span className="text-xs opacity-50">thinking</span>
+      <div className="flex gap-1">
+        {[0, 1, 2].map((i) => (
+          <span key={i} className="dot-bounce w-1.5 h-1.5 rounded-full inline-block"
+            style={{ background: color, animationDelay: `${i * 0.2}s` }} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── Error banner ──────────────────────────────────────────────────────────────
+function ErrorBanner({ msg }: { msg: string }) {
+  return (
+    <div className="flex items-start gap-2 px-3 py-2.5 rounded-xl text-xs font-mono"
+      style={{ background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.25)", color: "#fca5a5" }}>
+      <AlertCircle size={14} className="flex-shrink-0 mt-0.5" />
+      <span style={{ whiteSpace: "pre-line" }}>{msg}</span>
+    </div>
+  );
+}
+
+// ── Main App ──────────────────────────────────────────────────────────────────
+export default function OrionApp() {
+  const [bizInput, setBizInput] = useState<BusinessInput>({
+    revenue: 850000,
+    marketing_budget: 45000,
+    employees: 8,
+    main_problem: "",
+  });
+
+  const [questions, setQuestions]         = useState<string[]>([]);
+  const [answers, setAnswers]             = useState<string[]>([]);
+  const [loadingQuestions, setLoadingQ]   = useState(false);
+  const [messages, setMessages]           = useState<AgentMessage[]>([]);
+  const [typingAgent, setTypingAgent]     = useState<string | null>(null);
+  const [strategy, setStrategy]           = useState("");
+  const [strategyStreaming, setStratStream] = useState(false);
+  const [whatIfMarketing, setWhatIfMkt]   = useState(45000);
+  const [whatIfEmployees, setWhatIfEmp]   = useState(8);
+  const [whatIfActive, setWhatIfActive]   = useState(false);
+  const [step, setStep]                   = useState<AppStep>("input");
+  const [running, setRunning]             = useState(false);
+  const [error, setError]                 = useState("");
+
+  const streamRef  = useRef<Record<string, string>>({});
+  const chatEndRef = useRef<HTMLDivElement>(null);
+  const abortRef   = useRef<AbortController | null>(null);
+
+  useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: "smooth" }); },
+    [messages, typingAgent, strategy]);
+
+  // Sync what-if sliders when input changes
+  useEffect(() => {
+    setWhatIfMkt(bizInput.marketing_budget);
+    setWhatIfEmp(bizInput.employees);
+  }, [bizInput.marketing_budget, bizInput.employees]);
+
+  // ── Feature 2: Smart questions ────────────────────────────────────────────
+  const fetchSmartQuestions = useCallback(async () => {
+    if (!bizInput.main_problem.trim()) {
+      setError("Please describe your main business problem first.");
+      return;
+    }
+    setError("");
+    setLoadingQ(true);
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 30000);
+
+    try {
+      let res: Response;
+      try {
+        res = await fetch(`${API}/smart-questions`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(bizInput),
+          signal: controller.signal,
+        });
+      } catch (fetchErr: any) {
+        if (fetchErr.name === "AbortError") {
+          throw new Error("Request timed out.\n→ Is uvicorn running in Terminal 1?");
+        }
+        throw new Error(
+          `Cannot reach backend at ${API}\n` +
+          "→ Check Terminal 1 shows: Uvicorn running on http://127.0.0.1:8000\n" +
+          "→ Make sure (venv) is active in that terminal"
+        );
+      } finally {
+        clearTimeout(timeout);
+      }
+
+      if (!res.ok) {
+        const txt = await res.text().catch(() => "");
+        throw new Error(`Backend error ${res.status}: ${txt}`);
+      }
+
+      const reader = res.body!.getReader();
+      const dec    = new TextDecoder();
+      let buf = "";
+      let gotQ = false;
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buf += dec.decode(value, { stream: true });
+        const lines = buf.split("\n");
+        buf = lines.pop() ?? "";
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          try {
+            const ev = JSON.parse(line.slice(6).trim());
+            if (ev.questions) {
+              setQuestions(ev.questions);
+              setAnswers(new Array(ev.questions.length).fill(""));
+              gotQ = true;
+            }
+          } catch {}
+        }
+      }
+
+      if (!gotQ) {
+        const fallback = [
+          "What marketing channels are you currently using?",
+          "Who is your primary target customer?",
+          "What does success look like in the next 6 months?",
+        ];
+        setQuestions(fallback);
+        setAnswers(["", "", ""]);
+      }
+
+      setStep("questions");
+    } catch (e: any) {
+      setError(e.message || "Something went wrong. Check both terminals are running.");
+    } finally {
+      setLoadingQ(false);
+    }
+  }, [bizInput]);
+
+  // ── Features 3-5: Run simulation ──────────────────────────────────────────
+  const runSimulation = useCallback(async (isWhatIf = false) => {
+    abortRef.current?.abort();
+    abortRef.current = new AbortController();
+    streamRef.current = {};
+
+    setMessages([]);
+    setStrategy("");
+    setStratStream(false);
+    setTypingAgent(null);
+    setRunning(true);
+    setError("");
+    setStep("simulation");
+
+    const payload = {
+      ...bizInput,
+      followup_questions: questions,
+      followup_answers: answers,
+      what_if_marketing: isWhatIf ? whatIfMarketing : null,
+      what_if_employees: isWhatIf ? whatIfEmployees : null,
+    };
+
+    try {
+      let res: Response;
+      try {
+        res = await fetch(`${API}/simulate`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+          signal: abortRef.current.signal,
+        });
+      } catch (fetchErr: any) {
+        if (fetchErr.name === "AbortError") return;
+        throw new Error(`Cannot reach backend at ${API}\n→ Make sure uvicorn is running in Terminal 1`);
+      }
+
+      if (!res.ok) throw new Error(`Backend error ${res.status}`);
+
+      const reader = res.body!.getReader();
+      const dec    = new TextDecoder();
+      let buf = "";
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buf += dec.decode(value, { stream: true });
+        const lines = buf.split("\n");
+        buf = lines.pop() ?? "";
+
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          let ev: any;
+          try { ev = JSON.parse(line.slice(6).trim()); } catch { continue; }
+
+          switch (ev.type) {
+            case "agent_start":
+              setTypingAgent(ev.agent);
+              break;
+
+            case "token": {
+              streamRef.current[ev.agent] = (streamRef.current[ev.agent] || "") + ev.token;
+              const content = streamRef.current[ev.agent];
+              setMessages((prev) => {
+                const idx = prev.findLastIndex((m) => m.id === ev.agent);
+                if (idx >= 0) {
+                  const next = [...prev];
+                  next[idx] = { ...next[idx], content, streaming: true };
+                  return next;
+                }
+                const cfg = AGENT_CONFIG[ev.agent as keyof typeof AGENT_CONFIG];
+                return [...prev, {
+                  id: ev.agent, name: cfg?.name ?? ev.agent,
+                  emoji: cfg?.emoji ?? "🤖", color: cfg?.color ?? "#8b5cf6",
+                  content, streaming: true,
+                }];
+              });
+              setTypingAgent(ev.agent);
+              break;
+            }
+
+            case "agent_done":
+              setMessages((prev) => prev.map((m) => m.id === ev.agent ? { ...m, streaming: false } : m));
+              setTypingAgent(null);
+              streamRef.current[ev.agent] = "";
+              break;
+
+            case "strategy_start":
+              setStratStream(true);
+              setTypingAgent("orion");
+              break;
+
+            case "strategy_token":
+              setStrategy((prev) => prev + ev.token);
+              break;
+
+            case "done":
+              setRunning(false);
+              setStratStream(false);
+              setTypingAgent(null);
+              setStep("result");
+              break;
+          }
+        }
+      }
+    } catch (e: any) {
+      if (e.name === "AbortError") return;
+      setError(e.message || "Simulation failed.");
+      setRunning(false);
+    }
+  }, [bizInput, questions, answers, whatIfMarketing, whatIfEmployees]);
+
+  const reset = useCallback(() => {
+    abortRef.current?.abort();
+    setStep("input"); setMessages([]); setStrategy("");
+    setQuestions([]); setAnswers([]); setError("");
+    setRunning(false); setWhatIfActive(false);
+  }, []);
+
+  const stepNum = { input: 1, questions: 2, simulation: 3, result: 4 }[step];
+
+  // ── Render ─────────────────────────────────────────────────────────────────
+  return (
+    <div className="relative min-h-screen" style={{ zIndex: 2 }}>
+      <div className="galaxy-bg" />
+      <StarField />
+
+      <div className="relative z-10">
+
+        {/* ── Header ── */}
+        <header className="sticky top-0 z-50 border-b"
+          style={{ borderColor: "rgba(139,92,246,0.15)", background: "rgba(3,0,13,0.85)", backdropFilter: "blur(16px)" }}>
+          <div className="max-w-6xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <OrionLogo size={36} />
+              <div>
+                <h1 className="text-lg font-display tracking-widest" style={{ color: "#f5f0ff", letterSpacing: "0.2em" }}>
+                  ORION AI
+                </h1>
+                <p className="text-xs font-mono" style={{ color: "rgba(196,181,253,0.45)", letterSpacing: "0.1em" }}>
+                  BUSINESS STRATEGY COMMAND CENTER
+                </p>
+              </div>
+            </div>
+
+            <div className="hidden sm:flex items-center gap-2">
+              {[{ n: 1, label: "Input" }, { n: 2, label: "Questions" }, { n: 3, label: "Debate" }, { n: 4, label: "Strategy" }]
+                .map(({ n, label }, i) => (
+                  <div key={n} className="flex items-center gap-2">
+                    {i > 0 && <div className="w-6 h-px" style={{ background: "rgba(139,92,246,0.25)" }} />}
+                    <div className="flex items-center gap-1.5">
+                      <StepBadge step={n} current={stepNum} />
+                      <span className="text-xs font-mono hidden md:block"
+                        style={{ color: stepNum >= n ? "rgba(196,181,253,0.7)" : "rgba(196,181,253,0.25)" }}>
+                        {label}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+            </div>
+
+            {step !== "input" && (
+              <button onClick={reset}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-mono transition-all"
+                style={{ border: "1px solid rgba(139,92,246,0.25)", color: "rgba(196,181,253,0.6)" }}>
+                <RotateCcw size={12} /> Reset
+              </button>
+            )}
+          </div>
+        </header>
+
+        <main className="max-w-6xl mx-auto px-4 sm:px-6 py-8">
+
+          {/* ── STEP 1: Input form ── */}
+          {step === "input" && (
+            <div className="section-enter max-w-2xl mx-auto">
+              <div className="text-center mb-10">
+                <div className="flex justify-center mb-5"><OrionLogo size={72} /></div>
+                <h2 className="text-4xl font-display mb-3" style={{ color: "#f5f0ff", letterSpacing: "0.1em" }}>
+                  MISSION BRIEF
+                </h2>
+                <p className="text-sm" style={{ color: "rgba(196,181,253,0.6)" }}>
+                  Enter your business data. Orion&apos;s AI agents will analyze, debate, and strategize.
+                </p>
+              </div>
+
+              <div className="orion-card orion-card-glow p-6 flex flex-col gap-5">
+                {/* Revenue */}
+                <div>
+                  <label className="orion-label">Monthly Revenue (₹)</label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm font-mono"
+                      style={{ color: "rgba(196,181,253,0.45)" }}>₹</span>
+                    <input type="number" className="orion-input pl-7"
+                      value={bizInput.revenue} min={0} step={100000}
+                      onChange={(e) => setBizInput((p) => ({ ...p, revenue: +e.target.value }))} />
+                  </div>
+                  <p className="text-xs mt-1 font-mono" style={{ color: "rgba(196,181,253,0.35)" }}>
+                    {formatCurrency(bizInput.revenue)}
+                  </p>
+                </div>
+
+                {/* Marketing budget */}
+                <div>
+                  <label className="orion-label">Marketing Budget (₹)</label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm font-mono"
+                      style={{ color: "rgba(196,181,253,0.45)" }}>₹</span>
+                    <input type="number" className="orion-input pl-7"
+                      value={bizInput.marketing_budget} min={0} step={10000}
+                      onChange={(e) => setBizInput((p) => ({ ...p, marketing_budget: +e.target.value }))} />
+                  </div>
+                  <p className="text-xs mt-1 font-mono" style={{ color: "rgba(196,181,253,0.35)" }}>
+                    {bizInput.revenue > 0
+                      ? `${((bizInput.marketing_budget / bizInput.revenue) * 100).toFixed(1)}% of revenue`
+                      : "—"}
+                  </p>
+                </div>
+
+                {/* Employees */}
+                <div>
+                  <label className="orion-label">Number of Employees</label>
+                  <input type="number" className="orion-input"
+                    value={bizInput.employees} min={1} step={1}
+                    onChange={(e) => setBizInput((p) => ({ ...p, employees: +e.target.value }))} />
+                </div>
+
+                {/* Problem */}
+                <div>
+                  <label className="orion-label">Main Business Problem</label>
+                  <textarea className="orion-input resize-none" rows={3}
+                    placeholder="e.g. We have good traffic but very few visitors convert to paying customers..."
+                    value={bizInput.main_problem}
+                    onChange={(e) => setBizInput((p) => ({ ...p, main_problem: e.target.value }))} />
+                </div>
+
+                {error && <ErrorBanner msg={error} />}
+
+                <button className="btn-orion w-full flex items-center justify-center gap-2 py-3.5 text-sm"
+                  onClick={fetchSmartQuestions} disabled={loadingQuestions}>
+                  {loadingQuestions
+                    ? <><Loader2 size={16} className="animate-spin" />Analyzing your business…</>
+                    : <><Sparkles size={16} />Analyze &amp; Get Smart Questions<ChevronRight size={16} /></>}
+                </button>
+              </div>
+
+              {/* Agent preview cards */}
+              <div className="mt-6 grid grid-cols-2 sm:grid-cols-4 gap-3">
+                {Object.entries(AGENT_CONFIG).map(([id, cfg]) => (
+                  <div key={id} className="orion-card p-3 text-center flex flex-col items-center gap-2"
+                    style={{ borderColor: `${cfg.color}20` }}>
+                    <div className="text-2xl">{cfg.emoji}</div>
+                    <div className="text-xs font-mono font-bold" style={{ color: cfg.color }}>{cfg.name}</div>
+                    <div className="text-xs opacity-40">{cfg.label}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* ── STEP 2: Questions ── */}
+          {step === "questions" && (
+            <div className="section-enter max-w-2xl mx-auto">
+              <div className="text-center mb-8">
+                <div className="w-12 h-12 rounded-full mx-auto mb-4 flex items-center justify-center"
+                  style={{ background: "rgba(139,92,246,0.15)", border: "1px solid rgba(168,85,247,0.35)" }}>
+                  <Brain size={20} style={{ color: "#c084fc" }} />
+                </div>
+                <h2 className="text-2xl font-display mb-2" style={{ color: "#f5f0ff", letterSpacing: "0.1em" }}>
+                  ORION NEEDS MORE DATA
+                </h2>
+                <p className="text-sm" style={{ color: "rgba(196,181,253,0.55)" }}>
+                  Answer these to sharpen the strategy — or skip and run anyway
+                </p>
+              </div>
+
+              <div className="orion-card orion-card-glow p-6 flex flex-col gap-6">
+                {questions.map((q, i) => (
+                  <div key={i}>
+                    <div className="flex items-start gap-3 mb-2">
+                      <div className="w-5 h-5 rounded-full flex items-center justify-center text-xs font-mono flex-shrink-0 mt-0.5"
+                        style={{ background: "rgba(139,92,246,0.2)", border: "1px solid rgba(168,85,247,0.35)", color: "#c084fc" }}>
+                        {i + 1}
+                      </div>
+                      <label className="text-sm" style={{ color: "rgba(245,240,255,0.85)" }}>{q}</label>
+                    </div>
+                    <textarea className="orion-input resize-none ml-8" rows={2}
+                      placeholder="Your answer (optional)…"
+                      value={answers[i] || ""}
+                      onChange={(e) => {
+                        const next = [...answers];
+                        next[i] = e.target.value;
+                        setAnswers(next);
+                      }} />
+                  </div>
+                ))}
+
+                <div className="flex gap-3 pt-2">
+                  <button className="flex-1 py-3 rounded-xl text-sm font-semibold transition-all"
+                    style={{ border: "1px solid rgba(139,92,246,0.25)", color: "rgba(196,181,253,0.6)" }}
+                    onClick={() => runSimulation()}>
+                    Skip &amp; Run
+                  </button>
+                  <button className="btn-orion flex-1 flex items-center justify-center gap-2 py-3 text-sm"
+                    onClick={() => runSimulation()}>
+                    <Play size={15} /> Launch Simulation
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ── STEP 3 & 4: Debate + Result ── */}
+          {(step === "simulation" || step === "result") && (
+            <div className="section-enter grid grid-cols-1 lg:grid-cols-[1fr_340px] gap-6">
+
+              {/* Left: debate */}
+              <div className="flex flex-col gap-4">
+
+                {/* Agent status bar */}
+                <div className="orion-card p-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2">
+                      <div className={`w-2 h-2 rounded-full ${running ? "animate-pulse" : ""}`}
+                        style={{ background: running ? "#a855f7" : step === "result" ? "#22c55e" : "#64748b" }} />
+                      <span className="text-xs font-mono" style={{ color: "rgba(196,181,253,0.6)" }}>
+                        {running ? "WAR ROOM ACTIVE" : "DEBATE COMPLETE"}
+                      </span>
+                    </div>
+                    {running && (
+                      <div className="flex items-center gap-1.5 text-xs font-mono" style={{ color: "#c084fc" }}>
+                        <Loader2 size={12} className="animate-spin" /> Agents deliberating…
+                      </div>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-4 gap-2">
+                    {Object.entries(AGENT_CONFIG).map(([id, cfg]) => {
+                      const done = messages.some((m) => m.id === id && !m.streaming);
+                      const active = typingAgent === id || messages.some((m) => m.id === id && m.streaming);
+                      return (
+                        <div key={id} className="flex flex-col items-center gap-1 p-2 rounded-lg transition-all duration-300"
+                          style={{
+                            background: active ? `${cfg.color}15` : "transparent",
+                            border: `1px solid ${active ? cfg.color + "40" : "rgba(139,92,246,0.1)"}`,
+                          }}>
+                          <span className="text-base">{cfg.emoji}</span>
+                          <div className="w-1.5 h-1.5 rounded-full transition-all"
+                            style={{ background: done ? "#22c55e" : active ? cfg.color : "rgba(139,92,246,0.2)" }} />
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Chat log */}
+                <div className="orion-card orion-card-glow p-5 flex flex-col gap-4 max-h-[520px] overflow-y-auto">
+                  {messages.length === 0 && running && (
+                    <div className="flex items-center justify-center py-8 gap-3">
+                      <Loader2 size={16} className="animate-spin" style={{ color: "#8b5cf6" }} />
+                      <span className="text-sm font-mono" style={{ color: "rgba(196,181,253,0.5)" }}>Summoning agents…</span>
+                    </div>
+                  )}
+                  {messages.map((msg, i) => <AgentBubble key={`${msg.id}-${i}`} msg={msg} />)}
+                  {typingAgent && typingAgent !== "orion" && !messages.some((m) => m.id === typingAgent) && (
+                    <TypingDots
+                      name={AGENT_CONFIG[typingAgent as keyof typeof AGENT_CONFIG]?.name ?? typingAgent}
+                      color={AGENT_CONFIG[typingAgent as keyof typeof AGENT_CONFIG]?.color ?? "#8b5cf6"}
+                    />
+                  )}
+                  <div ref={chatEndRef} />
+                </div>
+
+                {/* Final strategy */}
+                {(strategyStreaming || strategy) && (
+                  <div className="strategy-glow rounded-2xl p-5 section-enter">
+                    <div className="flex items-center gap-3 mb-4">
+                      <div className="w-10 h-10 rounded-xl flex items-center justify-center text-xl"
+                        style={{ background: "rgba(168,85,247,0.15)", border: "1px solid rgba(192,132,252,0.35)" }}>🧠</div>
+                      <div>
+                        <div className="text-sm font-mono font-bold" style={{ color: "#c084fc" }}>ORION — FINAL STRATEGY</div>
+                        <div className="text-xs opacity-50 font-mono">Synthesized from all agent perspectives</div>
+                      </div>
+                      {strategyStreaming && <Loader2 size={14} className="animate-spin ml-auto" style={{ color: "#8b5cf6" }} />}
+                    </div>
+                    <div className="text-sm leading-relaxed" style={{ color: "rgba(245,240,255,0.88)" }}>
+                      {strategy.split(/(\*\*[^*]+\*\*)/g).map((p, i) =>
+                        p.startsWith("**") && p.endsWith("**")
+                          ? <strong key={i} style={{ color: "#c084fc", fontWeight: 600 }}>{p.slice(2, -2)}</strong>
+                          : <span key={i}>{p}</span>
+                      )}
+                      {strategyStreaming && <span className="blink-cursor" />}
+                    </div>
+                  </div>
+                )}
+
+                {error && <ErrorBanner msg={error} />}
+              </div>
+
+              {/* Right: What-If + info */}
+              <div className="flex flex-col gap-4">
+
+                {/* Current metrics */}
+                <div className="orion-card p-4">
+                  <p className="text-xs font-mono mb-3" style={{ color: "rgba(196,181,253,0.5)", letterSpacing: "0.1em" }}>
+                    CURRENT METRICS
+                  </p>
+                  <div className="space-y-2">
+                    {[
+                      { label: "Revenue",    value: formatCurrency(bizInput.revenue) },
+                      { label: "Mkt Budget", value: formatCurrency(bizInput.marketing_budget) },
+                      { label: "Employees",  value: `${bizInput.employees} people` },
+                    ].map(({ label, value }) => (
+                      <div key={label} className="flex justify-between items-center">
+                        <span className="text-xs font-mono" style={{ color: "rgba(196,181,253,0.4)" }}>{label}</span>
+                        <span className="text-xs font-mono font-bold" style={{ color: "#c084fc" }}>{value}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* What-If simulator */}
+                <div className="orion-card active-card p-5 flex flex-col gap-5">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Zap size={14} style={{ color: "#a855f7" }} />
+                      <span className="text-xs font-mono font-bold" style={{ color: "#c084fc", letterSpacing: "0.1em" }}>
+                        WHAT-IF SIMULATOR
+                      </span>
+                    </div>
+                    <div className="w-8 h-4 rounded-full transition-all duration-200 relative cursor-pointer"
+                      style={{
+                        background: whatIfActive ? "rgba(168,85,247,0.6)" : "rgba(139,92,246,0.15)",
+                        border: "1px solid rgba(168,85,247,0.3)",
+                      }}
+                      onClick={() => setWhatIfActive((v) => !v)}>
+                      <div className="absolute top-0.5 w-3 h-3 rounded-full transition-all duration-200"
+                        style={{
+                          background: whatIfActive ? "#c084fc" : "rgba(196,181,253,0.3)",
+                          left: whatIfActive ? "calc(100% - 14px)" : "2px",
+                        }} />
+                    </div>
+                  </div>
+
+                  <div className={`flex flex-col gap-5 transition-opacity duration-200 ${whatIfActive ? "opacity-100" : "opacity-40 pointer-events-none"}`}>
+                    {/* Marketing budget slider */}
+                    <div>
+                      <div className="flex justify-between items-center mb-2">
+                        <label className="orion-label" style={{ margin: 0 }}>Marketing Budget</label>
+                        <span className="text-xs font-mono font-bold" style={{ color: "#a855f7" }}>
+                          {formatCurrency(whatIfMarketing)}
+                        </span>
+                      </div>
+                      <input type="range" className="orion-range"
+                        min={10000}
+                        max={Math.max(bizInput.marketing_budget * 4, 500000)}
+                        step={10000}
+                        value={whatIfMarketing}
+                        onChange={(e) => setWhatIfMkt(+e.target.value)} />
+                      <div className="flex justify-between text-xs font-mono mt-1" style={{ color: "rgba(196,181,253,0.3)" }}>
+                        <span>₹10K</span>
+                        <span>{formatCurrency(Math.max(bizInput.marketing_budget * 4, 500000))}</span>
+                      </div>
+                      {whatIfMarketing !== bizInput.marketing_budget && (
+                        <p className="text-xs font-mono mt-1"
+                          style={{ color: whatIfMarketing > bizInput.marketing_budget ? "#22c55e" : "#f87171" }}>
+                          {whatIfMarketing > bizInput.marketing_budget ? "▲" : "▼"}{" "}
+                          {Math.abs(((whatIfMarketing - bizInput.marketing_budget) / bizInput.marketing_budget) * 100).toFixed(0)}% vs current
+                        </p>
+                      )}
+                    </div>
+
+                    {/* Employees slider */}
+                    <div>
+                      <div className="flex justify-between items-center mb-2">
+                        <label className="orion-label" style={{ margin: 0 }}>Employees</label>
+                        <span className="text-xs font-mono font-bold" style={{ color: "#c084fc" }}>
+                          {whatIfEmployees} people
+                        </span>
+                      </div>
+                      <input type="range" className="orion-range"
+                        min={1}
+                        max={Math.max(bizInput.employees * 5, 50)}
+                        step={1}
+                        value={whatIfEmployees}
+                        onChange={(e) => setWhatIfEmp(+e.target.value)} />
+                      <div className="flex justify-between text-xs font-mono mt-1" style={{ color: "rgba(196,181,253,0.3)" }}>
+                        <span>1</span>
+                        <span>{Math.max(bizInput.employees * 5, 50)}</span>
+                      </div>
+                    </div>
+
+                    <button className="btn-orion w-full flex items-center justify-center gap-2 py-3 text-sm"
+                      onClick={() => runSimulation(true)} disabled={running}>
+                      {running
+                        ? <><Loader2 size={14} className="animate-spin" />Simulating…</>
+                        : <><Zap size={14} />Run What-If Scenario</>}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Agent roster */}
+                <div className="orion-card p-4 flex flex-col gap-3">
+                  <p className="text-xs font-mono" style={{ color: "rgba(196,181,253,0.4)", letterSpacing: "0.1em" }}>
+                    AGENT ROSTER
+                  </p>
+                  {Object.entries(AGENT_CONFIG).map(([id, cfg]) => (
+                    <div key={id} className="flex items-center gap-3">
+                      <div className="w-7 h-7 rounded-lg flex items-center justify-center text-sm"
+                        style={{ background: `${cfg.color}15`, border: `1px solid ${cfg.color}30` }}>
+                        {cfg.emoji}
+                      </div>
+                      <div>
+                        <div className="text-xs font-mono font-bold" style={{ color: cfg.color }}>{cfg.name}</div>
+                        <div className="text-xs opacity-40">{cfg.label}</div>
+                      </div>
+                    </div>
+                  ))}
+                  <div className="flex items-center gap-3 pt-2 border-t" style={{ borderColor: "rgba(139,92,246,0.1)" }}>
+                    <div className="w-7 h-7 rounded-lg flex items-center justify-center text-sm"
+                      style={{ background: "rgba(168,85,247,0.15)", border: "1px solid rgba(192,132,252,0.3)" }}>🧠</div>
+                    <div>
+                      <div className="text-xs font-mono font-bold" style={{ color: "#c084fc" }}>Orion Strategist</div>
+                      <div className="text-xs opacity-40">Final Synthesis</div>
+                    </div>
+                  </div>
+                </div>
+
+                {step === "result" && (
+                  <button className="btn-orion w-full flex items-center justify-center gap-2 py-3 text-sm section-enter"
+                    onClick={() => runSimulation(false)} disabled={running}>
+                    <RotateCcw size={14} /> Re-run Simulation
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+        </main>
+
+        <footer className="border-t mt-12 py-5 text-center" style={{ borderColor: "rgba(139,92,246,0.1)" }}>
+          <p className="text-xs font-mono" style={{ color: "rgba(196,181,253,0.25)" }}>
+            ORION AI · Powered by Groq + LangChain · DSOC 2026
+          </p>
+        </footer>
+      </div>
+    </div>
+  );
+}
