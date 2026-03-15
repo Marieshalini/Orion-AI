@@ -91,9 +91,11 @@ function OrionLogo({ size = 48 }: { size?: number }) {
 }
 
 // ── Step badge ────────────────────────────────────────────────────────────────
-function StepBadge({ step, current }: { step: number; current: number }) {
-  const done = current > step;
-  const active = current === step;
+function StepBadge({ step, current, isDone }: { step: number; current: number; isDone?: boolean }) {
+  // A step is "done" if we've moved past it, OR if it's the last step (4)
+  // and isDone is explicitly true (strategy fully streamed)
+  const done = current > step || (step === 4 && isDone);
+  const active = current === step && !done;
   return (
     <div className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-mono font-bold transition-all duration-300"
       style={{
@@ -153,7 +155,104 @@ function TypingDots({ name, color }: { name: string; color: string }) {
   );
 }
 
-// ── Error banner ──────────────────────────────────────────────────────────────
+// ── Strategy formatter ────────────────────────────────────────────────────────
+// Parses the LLM output into structured visual sections.
+// Expected format from the prompt:
+//   **ORION STRATEGY:** ...
+//   **TOP 3 ACTIONS:** 1. ... 2. ... 3. ...
+//   **PROJECTED IMPACT:** ...
+//   **CRITICAL RISK:** ...
+function StrategyDisplay({ text, streaming }: { text: string; streaming: boolean }) {
+  // Split on bold section headers like **HEADER:**
+  const sectionRegex = /\*\*([^*]+)\*\*[:\s]*/g;
+  const sections: { title: string; content: string; color: string; emoji: string }[] = [];
+
+  const SECTION_META: Record<string, { color: string; emoji: string }> = {
+    "ORION STRATEGY":   { color: "#c084fc", emoji: "🧠" },
+    "TOP 3 ACTIONS":    { color: "#a855f7", emoji: "⚡" },
+    "PROJECTED IMPACT": { color: "#22c55e", emoji: "📈" },
+    "CRITICAL RISK":    { color: "#f59e0b", emoji: "⚠️" },
+  };
+
+  // Find all section positions
+  const matches: { title: string; index: number; end: number }[] = [];
+  let m: RegExpExecArray | null;
+  while ((m = sectionRegex.exec(text)) !== null) {
+    matches.push({ title: m[1].trim().toUpperCase(), index: m.index, end: m.index + m[0].length });
+  }
+
+  for (let i = 0; i < matches.length; i++) {
+    const { title, end } = matches[i];
+    const nextIndex = matches[i + 1]?.index ?? text.length;
+    const content = text.slice(end, nextIndex).trim();
+    const meta = SECTION_META[title] ?? { color: "#c084fc", emoji: "✦" };
+    sections.push({ title, content, ...meta });
+  }
+
+  // If no sections parsed yet (still streaming early), show plain text
+ if (sections.length === 0) {
+  return (
+    <div className="text-sm leading-relaxed" style={{ color: "rgba(245,240,255,0.85)" }}>
+      {text}
+      {streaming && <span className="blink-cursor" />}
+    </div>
+  );
+}
+
+  return (
+    <div className="flex flex-col gap-4">
+      {sections.map((sec, i) => {
+        const isLast = i === sections.length - 1;
+        // Render numbered list items for TOP 3 ACTIONS
+        const isActionList = sec.title.includes("ACTION");
+        const lines = sec.content.split(/\n/).map((l) => l.trim()).filter(Boolean);
+
+        return (
+          <div key={sec.title} className="rounded-xl p-4"
+            style={{ background: `${sec.color}08`, border: `1px solid ${sec.color}20` }}>
+            {/* Section header */}
+            <div className="flex items-center gap-2 mb-2">
+              <span className="text-base">{sec.emoji}</span>
+              <span className="text-xs font-mono font-bold tracking-widest uppercase"
+                style={{ color: sec.color }}>
+                {sec.title}
+              </span>
+            </div>
+            {/* Section body */}
+            {isActionList ? (
+              <ol className="flex flex-col gap-2">
+                {lines.map((line, li) => {
+                  // Strip leading "1." "2." etc
+                  const clean = line.replace(/^\d+\.\s*/, "");
+                  return (
+                    <li key={li} className="flex gap-2 items-start text-sm"
+                      style={{ color: "rgba(245,240,255,0.85)" }}>
+                      <span className="flex-shrink-0 w-5 h-5 rounded-full flex items-center justify-center text-xs font-mono font-bold mt-0.5"
+                        style={{ background: `${sec.color}20`, color: sec.color }}>
+                        {li + 1}
+                      </span>
+                      <span className="leading-relaxed">{clean}</span>
+                    </li>
+                  );
+                })}
+              </ol>
+            ) : (
+              <p className="text-sm leading-relaxed" style={{ color: "rgba(245,240,255,0.85)" }}>
+                {lines.join(" ")}
+                {streaming && isLast && <span className="blink-cursor" />}
+              </p>
+            )}
+          </div>
+        );
+      })}
+      {streaming && sections.length > 0 && (
+        <div className="flex items-center gap-2 text-xs font-mono" style={{ color: "rgba(196,181,253,0.4)" }}>
+          <Loader2 size={10} className="animate-spin" /> Writing strategy…
+        </div>
+      )}
+    </div>
+  );
+}
 function ErrorBanner({ msg }: { msg: string }) {
   return (
     <div className="flex items-start gap-2 px-3 py-2.5 rounded-xl text-xs font-mono"
@@ -431,7 +530,7 @@ export default function OrionApp() {
                   <div key={n} className="flex items-center gap-2">
                     {i > 0 && <div className="w-6 h-px" style={{ background: "rgba(139,92,246,0.25)" }} />}
                     <div className="flex items-center gap-1.5">
-                      <StepBadge step={n} current={stepNum} />
+                      <StepBadge step={n} current={stepNum} isDone={step === "result" && !strategyStreaming && !!strategy} />
                       <span className="text-xs font-mono hidden md:block"
                         style={{ color: stepNum >= n ? "rgba(196,181,253,0.7)" : "rgba(196,181,253,0.25)" }}>
                         {label}
@@ -634,8 +733,9 @@ export default function OrionApp() {
                   </div>
                 </div>
 
-                {/* Chat log */}
-                <div className="orion-card orion-card-glow p-5 flex flex-col gap-4 max-h-[520px] overflow-y-auto">
+                {/* Chat log — fixed height, independently scrollable */}
+                <div className="orion-card orion-card-glow p-5 flex flex-col gap-4"
+                  style={{ height: "420px", overflowY: "auto", overflowX: "hidden" }}>
                   {messages.length === 0 && running && (
                     <div className="flex items-center justify-center py-8 gap-3">
                       <Loader2 size={16} className="animate-spin" style={{ color: "#8b5cf6" }} />
@@ -652,7 +752,7 @@ export default function OrionApp() {
                   <div ref={chatEndRef} />
                 </div>
 
-                {/* Final strategy */}
+                {/* Final strategy — formatted sections */}
                 {(strategyStreaming || strategy) && (
                   <div className="strategy-glow rounded-2xl p-5 section-enter">
                     <div className="flex items-center gap-3 mb-4">
@@ -662,16 +762,13 @@ export default function OrionApp() {
                         <div className="text-sm font-mono font-bold" style={{ color: "#c084fc" }}>ORION — FINAL STRATEGY</div>
                         <div className="text-xs opacity-50 font-mono">Synthesized from all agent perspectives</div>
                       </div>
-                      {strategyStreaming && <Loader2 size={14} className="animate-spin ml-auto" style={{ color: "#8b5cf6" }} />}
-                    </div>
-                    <div className="text-sm leading-relaxed" style={{ color: "rgba(245,240,255,0.88)" }}>
-                      {strategy.split(/(\*\*[^*]+\*\*)/g).map((p, i) =>
-                        p.startsWith("**") && p.endsWith("**")
-                          ? <strong key={i} style={{ color: "#c084fc", fontWeight: 600 }}>{p.slice(2, -2)}</strong>
-                          : <span key={i}>{p}</span>
+                      {strategyStreaming && (
+                        <div className="ml-auto flex items-center gap-1.5 text-xs font-mono" style={{ color: "#8b5cf6" }}>
+                          <Loader2 size={12} className="animate-spin" /> Generating…
+                        </div>
                       )}
-                      {strategyStreaming && <span className="blink-cursor" />}
                     </div>
+                    <StrategyDisplay text={strategy} streaming={strategyStreaming} />
                   </div>
                 )}
 
