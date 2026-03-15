@@ -67,7 +67,10 @@ const AGENT_CONFIG = {
 } as const;
 
 // ── Star field ────────────────────────────────────────────────────────────────
-interface StarData { id: number; x: number; y: number; size: number; dur: string; delay: string; op: string; }
+interface StarData {
+  id: number; x: number; y: number; size: number;
+  dur: string; delay: string; op: string;
+}
 
 function StarField() {
   const [stars, setStars] = useState<StarData[]>([]);
@@ -116,6 +119,29 @@ function StepBadge({ step, current, isDone }: { step: number; current: number; i
         boxShadow: active ? "0 0 16px rgba(168,85,247,0.4)" : "none",
       }}>
       {done ? <CheckCircle2 size={14} /> : step}
+    </div>
+  );
+}
+
+// ── Rupee Input ───────────────────────────────────────────────────────────────
+// Uses dedicated CSS classes (.rupee-wrap, .rupee-sym, .rupee-input) from
+// globals.css so the ₹ symbol is always fully visible with a clean gap.
+function RupeeInput({
+  value, min = 0, step = 1, onChange,
+}: {
+  value: number; min?: number; step?: number; onChange: (v: number) => void;
+}) {
+  return (
+    <div className="rupee-wrap">
+      <span className="rupee-sym">₹</span>
+      <input
+        type="number"
+        className="orion-input rupee-input"
+        value={value}
+        min={min}
+        step={step}
+        onChange={(e) => onChange(+e.target.value)}
+      />
     </div>
   );
 }
@@ -264,59 +290,40 @@ function RevenueBarChart({ projections }: { projections: Projections }) {
     { label: "Current",   sub: "Costs",   value: projections.baseline_costs,    color: "#e879f9" },
     { label: "Projected", sub: "Costs",   value: projections.projected_costs,   color: "#f97316" },
   ];
-  const max     = Math.max(...data.map((d) => d.value)) * 1.2;
-  const W       = 420;
-  const H       = 150;
-  const PAD_TOP = 30;
-  const PAD_L   = 60;
-  const PAD_B   = 46;
-  const BAR_W   = 48;
-  const GAP     = 20;
-  const chartW  = data.length * BAR_W + (data.length - 1) * GAP;
-  const startX  = PAD_L + (W - PAD_L - chartW) / 2;
+  const max = Math.max(...data.map((d) => d.value)) * 1.2;
+  const W = 420; const H = 150; const PAD_TOP = 30; const PAD_L = 60;
+  const PAD_B = 46; const BAR_W = 48; const GAP = 20;
+  const chartW = data.length * BAR_W + (data.length - 1) * GAP;
+  const startX = PAD_L + (W - PAD_L - chartW) / 2;
   const TOTAL_H = PAD_TOP + H + PAD_B;
-
   return (
     <div style={{ width: "100%", overflowX: "auto" }}>
       <svg viewBox={`0 0 ${W} ${TOTAL_H}`} width="100%" style={{ display: "block", minWidth: "300px" }}>
-        {/* Y gridlines + labels */}
         {[0, 0.25, 0.5, 0.75, 1].map((pct) => {
           const y = PAD_TOP + (1 - pct) * H;
           return (
             <g key={pct}>
-              <line x1={PAD_L} y1={y} x2={startX + chartW + 8} y2={y}
-                stroke="rgba(139,92,246,0.1)" strokeWidth="1" strokeDasharray="4,4" />
-              <text x={PAD_L - 6} y={y + 3.5} textAnchor="end" fontSize="8.5"
-                fill="rgba(196,181,253,0.45)" fontFamily="JetBrains Mono, monospace">
+              <line x1={PAD_L} y1={y} x2={startX + chartW + 8} y2={y} stroke="rgba(139,92,246,0.1)" strokeWidth="1" strokeDasharray="4,4" />
+              <text x={PAD_L - 6} y={y + 3.5} textAnchor="end" fontSize="8.5" fill="rgba(196,181,253,0.45)" fontFamily="JetBrains Mono, monospace">
                 {formatCurrency(max * pct)}
               </text>
             </g>
           );
         })}
-        {/* Baseline axis */}
-        <line x1={PAD_L} y1={PAD_TOP + H} x2={startX + chartW + 8} y2={PAD_TOP + H}
-          stroke="rgba(139,92,246,0.25)" strokeWidth="1" />
-        {/* Bars */}
+        <line x1={PAD_L} y1={PAD_TOP + H} x2={startX + chartW + 8} y2={PAD_TOP + H} stroke="rgba(139,92,246,0.25)" strokeWidth="1" />
         {data.map((d, i) => {
           const barH = Math.max(3, (d.value / max) * H);
-          const x    = startX + i * (BAR_W + GAP);
-          const y    = PAD_TOP + H - barH;
+          const x = startX + i * (BAR_W + GAP);
+          const y = PAD_TOP + H - barH;
           return (
             <g key={`${d.label}-${d.sub}`}>
               <rect x={x - 3} y={y - 2} width={BAR_W + 6} height={barH + 4} rx="7" fill={d.color} opacity="0.1" />
               <rect x={x} y={y} width={BAR_W} height={barH} rx="5" fill={d.color} opacity="0.88" />
-              <text x={x + BAR_W / 2} y={y - 6} textAnchor="middle" fontSize="8.5"
-                fill={d.color} fontFamily="JetBrains Mono, monospace" fontWeight="bold">
+              <text x={x + BAR_W / 2} y={y - 6} textAnchor="middle" fontSize="8.5" fill={d.color} fontFamily="JetBrains Mono, monospace" fontWeight="bold">
                 {formatCurrency(d.value)}
               </text>
-              <text x={x + BAR_W / 2} y={PAD_TOP + H + 14} textAnchor="middle" fontSize="9"
-                fill="rgba(245,240,255,0.7)" fontFamily="JetBrains Mono, monospace">
-                {d.label}
-              </text>
-              <text x={x + BAR_W / 2} y={PAD_TOP + H + 27} textAnchor="middle" fontSize="8.5"
-                fill="rgba(196,181,253,0.45)" fontFamily="JetBrains Mono, monospace">
-                {d.sub}
-              </text>
+              <text x={x + BAR_W / 2} y={PAD_TOP + H + 14} textAnchor="middle" fontSize="9" fill="rgba(245,240,255,0.7)" fontFamily="JetBrains Mono, monospace">{d.label}</text>
+              <text x={x + BAR_W / 2} y={PAD_TOP + H + 27} textAnchor="middle" fontSize="8.5" fill="rgba(196,181,253,0.45)" fontFamily="JetBrains Mono, monospace">{d.sub}</text>
             </g>
           );
         })}
@@ -342,9 +349,7 @@ function RiskRewardBars({ projections }: { projections: Projections }) {
               <span className="text-xs">{b.emoji}</span>
               <span className="text-xs font-mono" style={{ color: "rgba(196,181,253,0.6)" }}>{b.label}</span>
             </div>
-            <span className="text-xs font-mono font-bold" style={{ color: b.color }}>
-              {"raw" in b ? b.raw : `${b.value}/100`}
-            </span>
+            <span className="text-xs font-mono font-bold" style={{ color: b.color }}>{"raw" in b ? b.raw : `${b.value}/100`}</span>
           </div>
           <div className="h-2 rounded-full" style={{ background: "rgba(139,92,246,0.12)" }}>
             <div className="h-full rounded-full transition-all duration-700"
@@ -356,11 +361,10 @@ function RiskRewardBars({ projections }: { projections: Projections }) {
   );
 }
 
-// ── Projection stat card ──────────────────────────────────────────────────────
+// ── Stat card ─────────────────────────────────────────────────────────────────
 function StatCard({ label, value, sub, color, emoji }: { label: string; value: string; sub?: string; color: string; emoji: string }) {
   return (
-    <div className="rounded-xl p-3 flex flex-col gap-1"
-      style={{ background: `${color}08`, border: `1px solid ${color}20` }}>
+    <div className="rounded-xl p-3 flex flex-col gap-1" style={{ background: `${color}08`, border: `1px solid ${color}20` }}>
       <div className="flex items-center gap-1.5">
         <span className="text-sm">{emoji}</span>
         <span className="text-xs font-mono" style={{ color: "rgba(196,181,253,0.5)" }}>{label}</span>
@@ -388,34 +392,24 @@ export default function OrionApp() {
   const [strategy, setStrategy]             = useState("");
   const [strategyStreaming, setStratStream] = useState(false);
   const [projections, setProjections]       = useState<Projections | null>(null);
-  // What-if
   const [whatIfMarketing, setWhatIfMkt]     = useState(45000);
   const [whatIfEmployees, setWhatIfEmp]     = useState(8);
   const [whatIfActive, setWhatIfActive]     = useState(false);
-  // Custom scenario
   const [customScenario, setCustomScenario] = useState("");
   const [showCustom, setShowCustom]         = useState(false);
-
-  const [step, setStep]     = useState<AppStep>("input");
-  const [running, setRunning] = useState(false);
-  const [error, setError]   = useState("");
+  const [step, setStep]                     = useState<AppStep>("input");
+  const [running, setRunning]               = useState(false);
+  const [error, setError]                   = useState("");
 
   const streamRef  = useRef<Record<string, string>>({});
   const chatEndRef = useRef<HTMLDivElement>(null);
   const abortRef   = useRef<AbortController | null>(null);
 
-  useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: "smooth" }); },
-    [messages, typingAgent, strategy]);
+  useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages, typingAgent, strategy]);
+  useEffect(() => { setWhatIfMkt(bizInput.marketing_budget); setWhatIfEmp(bizInput.employees); }, [bizInput.marketing_budget, bizInput.employees]);
 
-  useEffect(() => {
-    setWhatIfMkt(bizInput.marketing_budget);
-    setWhatIfEmp(bizInput.employees);
-  }, [bizInput.marketing_budget, bizInput.employees]);
+  const setField = (f: keyof BusinessInput) => (v: number | string) => setBizInput((p) => ({ ...p, [f]: v }));
 
-  const setField = (f: keyof BusinessInput) => (v: number | string) =>
-    setBizInput((p) => ({ ...p, [f]: v }));
-
-  // ── Smart questions ───────────────────────────────────────────────────────
   const fetchSmartQuestions = useCallback(async () => {
     if (!bizInput.main_problem.trim()) { setError("Please describe your main business problem first."); return; }
     setError(""); setLoadingQ(true);
@@ -424,10 +418,7 @@ export default function OrionApp() {
     try {
       let res: Response;
       try {
-        res = await fetch(`${API}/smart-questions`, {
-          method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(bizInput), signal: controller.signal,
-        });
+        res = await fetch(`${API}/smart-questions`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(bizInput), signal: controller.signal });
       } catch (e: any) {
         if (e.name === "AbortError") throw new Error("Request timed out. Is uvicorn running?");
         throw new Error(`Cannot reach backend at ${API}\n→ Run: uvicorn main:app --reload --port 8000`);
@@ -448,36 +439,17 @@ export default function OrionApp() {
     } catch (e: any) { setError(e.message || "Connection failed."); } finally { setLoadingQ(false); }
   }, [bizInput]);
 
-  // ── Run simulation ────────────────────────────────────────────────────────
   const runSimulation = useCallback(async (isWhatIf = false) => {
-    abortRef.current?.abort();
-    abortRef.current = new AbortController();
-    streamRef.current = {};
+    abortRef.current?.abort(); abortRef.current = new AbortController(); streamRef.current = {};
     setMessages([]); setStrategy(""); setStratStream(false);
-    setTypingAgent(null); setRunning(true); setError("");
-    setProjections(null); setStep("simulation");
-
-    const payload = {
-      ...bizInput,
-      followup_questions: questions, followup_answers: answers,
-      what_if_marketing: isWhatIf ? whatIfMarketing : null,
-      what_if_employees: isWhatIf ? whatIfEmployees : null,
-      custom_scenario: customScenario,
-    };
-
+    setTypingAgent(null); setRunning(true); setError(""); setProjections(null); setStep("simulation");
+    const payload = { ...bizInput, followup_questions: questions, followup_answers: answers, what_if_marketing: isWhatIf ? whatIfMarketing : null, what_if_employees: isWhatIf ? whatIfEmployees : null, custom_scenario: customScenario };
     try {
       let res: Response;
       try {
-        res = await fetch(`${API}/simulate`, {
-          method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload), signal: abortRef.current.signal,
-        });
-      } catch (e: any) {
-        if (e.name === "AbortError") return;
-        throw new Error(`Cannot reach backend at ${API}\n→ Check uvicorn is running`);
-      }
+        res = await fetch(`${API}/simulate`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload), signal: abortRef.current.signal });
+      } catch (e: any) { if (e.name === "AbortError") return; throw new Error(`Cannot reach backend at ${API}\n→ Check uvicorn is running`); }
       if (!res.ok) throw new Error(`Backend error ${res.status}`);
-
       const reader = res.body!.getReader(); const dec = new TextDecoder(); let buf = "";
       while (true) {
         const { value, done } = await reader.read(); if (done) break;
@@ -487,17 +459,9 @@ export default function OrionApp() {
           if (!line.startsWith("data: ")) continue;
           let ev: any; try { ev = JSON.parse(line.slice(6).trim()); } catch { continue; }
           switch (ev.type) {
-            case "projections":
-              setProjections(ev.data); break;
-
-            case "planner":
-              setMessages((prev) => [...prev, {
-                id: "planner", name: "Planner", emoji: "📋",
-                color: "#64748b", content: ev.content, streaming: false, isPlanner: true,
-              }]); break;
-
+            case "projections": setProjections(ev.data); break;
+            case "planner": setMessages((prev) => [...prev, { id: "planner", name: "Planner", emoji: "📋", color: "#64748b", content: ev.content, streaming: false, isPlanner: true }]); break;
             case "agent_start": setTypingAgent(ev.agent); break;
-
             case "token": {
               streamRef.current[ev.agent] = (streamRef.current[ev.agent] || "") + ev.token;
               const content = streamRef.current[ev.agent];
@@ -509,21 +473,14 @@ export default function OrionApp() {
               });
               setTypingAgent(ev.agent); break;
             }
-
-            case "agent_done":
-              setMessages((prev) => prev.map((m) => m.id === ev.agent ? { ...m, streaming: false } : m));
-              setTypingAgent(null); streamRef.current[ev.agent] = ""; break;
-
+            case "agent_done": setMessages((prev) => prev.map((m) => m.id === ev.agent ? { ...m, streaming: false } : m)); setTypingAgent(null); streamRef.current[ev.agent] = ""; break;
             case "strategy_start": setStratStream(true); setTypingAgent("orion"); break;
             case "strategy_token": setStrategy((prev) => prev + ev.token); break;
             case "done": setRunning(false); setStratStream(false); setTypingAgent(null); setStep("result"); break;
           }
         }
       }
-    } catch (e: any) {
-      if (e.name === "AbortError") return;
-      setError(e.message || "Simulation failed."); setRunning(false);
-    }
+    } catch (e: any) { if (e.name === "AbortError") return; setError(e.message || "Simulation failed."); setRunning(false); }
   }, [bizInput, questions, answers, whatIfMarketing, whatIfEmployees, customScenario]);
 
   const reset = useCallback(() => {
@@ -535,7 +492,6 @@ export default function OrionApp() {
 
   const stepNum = { input: 1, questions: 2, simulation: 3, result: 4 }[step];
 
-  // ── Render ────────────────────────────────────────────────────────────────
   return (
     <div className="relative min-h-screen" style={{ zIndex: 2 }}>
       <div className="galaxy-bg" /><StarField />
@@ -584,28 +540,30 @@ export default function OrionApp() {
               </div>
 
               <div className="orion-card orion-card-glow p-6 flex flex-col gap-5">
-                {/* Core fields */}
-                {[
-                  { label: "Monthly Revenue (₹)", field: "revenue" as const, step: 100000 },
-                  { label: "Marketing Budget (₹)", field: "marketing_budget" as const, step: 10000 },
-                ].map(({ label, field, step: s }) => (
-                  <div key={field}>
-                    <label className="orion-label">{label}</label>
-                    <div className="relative">
-                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm font-mono" style={{ color: "rgba(196,181,253,0.45)" }}>₹</span>
-                      <input type="number" className="orion-input pl-7" value={bizInput[field]} min={0} step={s}
-                        onChange={(e) => setField(field)(+e.target.value)} />
-                    </div>
-                    <p className="text-xs mt-1 font-mono" style={{ color: "rgba(196,181,253,0.35)" }}>{formatCurrency(bizInput[field] as number)}</p>
-                  </div>
-                ))}
 
+                {/* Revenue — uses RupeeInput for correct ₹ spacing */}
                 <div>
-                  <label className="orion-label">Number of Employees</label>
-                  <input type="number" className="orion-input" value={bizInput.employees} min={1} step={1}
-                    onChange={(e) => setField("employees")(+e.target.value)} />
+                  <label className="orion-label">Monthly Revenue (₹)</label>
+                  <RupeeInput value={bizInput.revenue} min={0} step={100000} onChange={(v) => setBizInput((p) => ({ ...p, revenue: v }))} />
+                  <p className="text-xs mt-1 font-mono" style={{ color: "rgba(196,181,253,0.35)" }}>{formatCurrency(bizInput.revenue)}</p>
                 </div>
 
+                {/* Marketing Budget — uses RupeeInput for correct ₹ spacing */}
+                <div>
+                  <label className="orion-label">Marketing Budget (₹)</label>
+                  <RupeeInput value={bizInput.marketing_budget} min={0} step={10000} onChange={(v) => setBizInput((p) => ({ ...p, marketing_budget: v }))} />
+                  <p className="text-xs mt-1 font-mono" style={{ color: "rgba(196,181,253,0.35)" }}>
+                    {bizInput.revenue > 0 ? `${((bizInput.marketing_budget / bizInput.revenue) * 100).toFixed(1)}% of revenue` : "—"}
+                  </p>
+                </div>
+
+                {/* Employees */}
+                <div>
+                  <label className="orion-label">Number of Employees</label>
+                  <input type="number" className="orion-input" value={bizInput.employees} min={1} step={1} onChange={(e) => setField("employees")(+e.target.value)} />
+                </div>
+
+                {/* Problem */}
                 <div>
                   <label className="orion-label">Main Business Problem</label>
                   <textarea className="orion-input resize-none" rows={3}
@@ -613,7 +571,7 @@ export default function OrionApp() {
                     value={bizInput.main_problem} onChange={(e) => setField("main_problem")(e.target.value)} />
                 </div>
 
-                {/* Advanced financial inputs toggle */}
+                {/* Advanced toggle */}
                 <button className="flex items-center gap-2 text-xs font-mono transition-all"
                   style={{ color: showAdvanced ? "#c084fc" : "rgba(196,181,253,0.45)" }}
                   onClick={() => setShowAdvanced((v) => !v)}>
@@ -635,8 +593,7 @@ export default function OrionApp() {
                     ].map(({ label, field, placeholder }) => (
                       <div key={field}>
                         <label className="orion-label">{label}</label>
-                        <input type="number" className="orion-input" value={bizInput[field]} min={0}
-                          placeholder={placeholder} onChange={(e) => setField(field)(+e.target.value)} />
+                        <input type="number" className="orion-input" value={bizInput[field]} min={0} placeholder={placeholder} onChange={(e) => setField(field)(+e.target.value)} />
                       </div>
                     ))}
                   </div>
@@ -701,23 +658,15 @@ export default function OrionApp() {
           {/* ── STEP 3 & 4: Debate + Result ── */}
           {(step === "simulation" || step === "result") && (
             <div className="section-enter grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-6">
-
-              {/* Left: chat + charts + strategy */}
               <div className="flex flex-col gap-4">
-
-                {/* Agent status bar */}
                 <div className="orion-card p-4">
                   <div className="flex items-center justify-between mb-3">
                     <div className="flex items-center gap-2">
                       <div className={`w-2 h-2 rounded-full ${running ? "animate-pulse" : ""}`}
                         style={{ background: running ? "#a855f7" : step === "result" ? "#22c55e" : "#64748b" }} />
-                      <span className="text-xs font-mono" style={{ color: "rgba(196,181,253,0.6)" }}>
-                        {running ? "WAR ROOM ACTIVE" : "DEBATE COMPLETE"}
-                      </span>
+                      <span className="text-xs font-mono" style={{ color: "rgba(196,181,253,0.6)" }}>{running ? "WAR ROOM ACTIVE" : "DEBATE COMPLETE"}</span>
                     </div>
-                    {running && <div className="flex items-center gap-1.5 text-xs font-mono" style={{ color: "#c084fc" }}>
-                      <Loader2 size={12} className="animate-spin" /> Agents deliberating…
-                    </div>}
+                    {running && <div className="flex items-center gap-1.5 text-xs font-mono" style={{ color: "#c084fc" }}><Loader2 size={12} className="animate-spin" /> Agents deliberating…</div>}
                   </div>
                   <div className="grid grid-cols-4 gap-2">
                     {Object.entries(AGENT_CONFIG).map(([id, cfg]) => {
@@ -734,9 +683,7 @@ export default function OrionApp() {
                   </div>
                 </div>
 
-                {/* Chat log */}
-                <div className="orion-card orion-card-glow p-5 flex flex-col gap-4"
-                  style={{ height: "420px", overflowY: "auto", overflowX: "hidden" }}>
+                <div className="orion-card orion-card-glow p-5 flex flex-col gap-4" style={{ height: "420px", overflowY: "auto", overflowX: "hidden" }}>
                   {messages.length === 0 && running && (
                     <div className="flex items-center justify-center py-8 gap-3">
                       <Loader2 size={16} className="animate-spin" style={{ color: "#8b5cf6" }} />
@@ -745,41 +692,28 @@ export default function OrionApp() {
                   )}
                   {messages.map((msg, i) => <AgentBubble key={`${msg.id}-${i}`} msg={msg} />)}
                   {typingAgent && typingAgent !== "orion" && !messages.some((m) => m.id === typingAgent) && (
-                    <TypingDots
-                      name={AGENT_CONFIG[typingAgent as keyof typeof AGENT_CONFIG]?.name ?? typingAgent}
-                      color={AGENT_CONFIG[typingAgent as keyof typeof AGENT_CONFIG]?.color ?? "#8b5cf6"} />
+                    <TypingDots name={AGENT_CONFIG[typingAgent as keyof typeof AGENT_CONFIG]?.name ?? typingAgent} color={AGENT_CONFIG[typingAgent as keyof typeof AGENT_CONFIG]?.color ?? "#8b5cf6"} />
                   )}
                   <div ref={chatEndRef} />
                 </div>
 
-                {/* Revenue bar chart */}
                 {projections && (
                   <div className="orion-card p-5 section-enter">
-                    <p className="text-xs font-mono mb-4 uppercase tracking-widest" style={{ color: "rgba(196,181,253,0.5)" }}>
-                      📊 Revenue &amp; Cost — Before vs After
-                    </p>
+                    <p className="text-xs font-mono mb-4 uppercase tracking-widest" style={{ color: "rgba(196,181,253,0.5)" }}>📊 Revenue &amp; Cost — Before vs After</p>
                     <RevenueBarChart projections={projections} />
-                    {projections.used_estimates.aov && (
-                      <p className="text-xs font-mono mt-2" style={{ color: "rgba(245,158,11,0.6)" }}>
-                        ⚠️ Revenue projection uses estimated avg order value. Add it in Step 1 for accuracy.
-                      </p>
-                    )}
+                    {projections.used_estimates.aov && <p className="text-xs font-mono mt-2" style={{ color: "rgba(245,158,11,0.6)" }}>⚠️ Revenue projection uses estimated avg order value.</p>}
                   </div>
                 )}
 
-                {/* Final strategy */}
                 {(strategyStreaming || strategy) && (
                   <div className="strategy-glow rounded-2xl p-5 section-enter">
                     <div className="flex items-center gap-3 mb-4">
-                      <div className="w-10 h-10 rounded-xl flex items-center justify-center text-xl"
-                        style={{ background: "rgba(168,85,247,0.15)", border: "1px solid rgba(192,132,252,0.35)" }}>🧠</div>
+                      <div className="w-10 h-10 rounded-xl flex items-center justify-center text-xl" style={{ background: "rgba(168,85,247,0.15)", border: "1px solid rgba(192,132,252,0.35)" }}>🧠</div>
                       <div>
                         <div className="text-sm font-mono font-bold" style={{ color: "#c084fc" }}>ORION — FINAL STRATEGY</div>
                         <div className="text-xs opacity-50 font-mono">Synthesized from all agent perspectives</div>
                       </div>
-                      {strategyStreaming && <div className="ml-auto flex items-center gap-1.5 text-xs font-mono" style={{ color: "#8b5cf6" }}>
-                        <Loader2 size={12} className="animate-spin" /> Generating…
-                      </div>}
+                      {strategyStreaming && <div className="ml-auto flex items-center gap-1.5 text-xs font-mono" style={{ color: "#8b5cf6" }}><Loader2 size={12} className="animate-spin" /> Generating…</div>}
                     </div>
                     <StrategyDisplay text={strategy} streaming={strategyStreaming} />
                   </div>
@@ -790,46 +724,33 @@ export default function OrionApp() {
 
               {/* Right panel */}
               <div className="flex flex-col gap-4">
-
-                {/* Key metrics */}
                 <div className="orion-card p-4">
                   <p className="text-xs font-mono mb-3" style={{ color: "rgba(196,181,253,0.5)", letterSpacing: "0.1em" }}>CURRENT METRICS</p>
                   <div className="space-y-2">
-                    {[
-                      { label: "Revenue",    value: formatCurrency(bizInput.revenue) },
-                      { label: "Mkt Budget", value: formatCurrency(bizInput.marketing_budget) },
-                      { label: "Employees",  value: `${bizInput.employees} people` },
-                    ].map(({ label, value }) => (
-                      <div key={label} className="flex justify-between">
-                        <span className="text-xs font-mono" style={{ color: "rgba(196,181,253,0.4)" }}>{label}</span>
-                        <span className="text-xs font-mono font-bold" style={{ color: "#c084fc" }}>{value}</span>
-                      </div>
-                    ))}
+                    {[{ label: "Revenue", value: formatCurrency(bizInput.revenue) }, { label: "Mkt Budget", value: formatCurrency(bizInput.marketing_budget) }, { label: "Employees", value: `${bizInput.employees} people` }]
+                      .map(({ label, value }) => (
+                        <div key={label} className="flex justify-between">
+                          <span className="text-xs font-mono" style={{ color: "rgba(196,181,253,0.4)" }}>{label}</span>
+                          <span className="text-xs font-mono font-bold" style={{ color: "#c084fc" }}>{value}</span>
+                        </div>
+                      ))}
                   </div>
                 </div>
 
-                {/* Financial projection stats */}
                 {projections && (
                   <div className="orion-card p-4 section-enter flex flex-col gap-3">
                     <p className="text-xs font-mono" style={{ color: "rgba(196,181,253,0.5)", letterSpacing: "0.1em" }}>FINANCIAL PROJECTIONS</p>
                     <div className="grid grid-cols-2 gap-2">
-                      <StatCard label="Proj. Revenue" value={formatCurrency(projections.projected_revenue)}
-                        sub={`+${projections.revenue_uplift_pct}%`} color="#22c55e" emoji="💰" />
-                      <StatCard label="Net Profit" value={formatCurrency(projections.net_profit)}
-                        sub={`${projections.net_margin_pct}% margin`} color={projections.net_profit >= 0 ? "#06b6d4" : "#f87171"} emoji="📊" />
-                      <StatCard label="ROMI" value={`${projections.romi.toFixed(0)}%`}
-                        sub="return on mkt spend" color="#c084fc" emoji="🎯" />
-                      <StatCard label="Payback" value={projections.payback_months > 0 ? `${projections.payback_months}mo` : "—"}
-                        sub="to recover spend" color="#f59e0b" emoji="⏱️" />
-                      <StatCard label="LTV/CAC" value={`${projections.ltv_cac_ratio}x`}
-                        sub=">3x is healthy" color={projections.ltv_cac_ratio >= 3 ? "#22c55e" : "#f59e0b"} emoji="👥" />
-                      <StatCard label="New Customers" value={`+${Math.round(projections.new_customers_whatif - projections.new_customers_base)}`}
-                        sub="from extra spend" color="#a855f7" emoji="🚀" />
+                      <StatCard label="Proj. Revenue" value={formatCurrency(projections.projected_revenue)} sub={`+${projections.revenue_uplift_pct}%`} color="#22c55e" emoji="💰" />
+                      <StatCard label="Net Profit" value={formatCurrency(projections.net_profit)} sub={`${projections.net_margin_pct}% margin`} color={projections.net_profit >= 0 ? "#06b6d4" : "#f87171"} emoji="📊" />
+                      <StatCard label="ROMI" value={`${projections.romi.toFixed(0)}%`} sub="return on mkt spend" color="#c084fc" emoji="🎯" />
+                      <StatCard label="Payback" value={projections.payback_months > 0 ? `${projections.payback_months}mo` : "—"} sub="to recover spend" color="#f59e0b" emoji="⏱️" />
+                      <StatCard label="LTV/CAC" value={`${projections.ltv_cac_ratio}x`} sub=">3x is healthy" color={projections.ltv_cac_ratio >= 3 ? "#22c55e" : "#f59e0b"} emoji="👥" />
+                      <StatCard label="New Customers" value={`+${Math.round(projections.new_customers_whatif - projections.new_customers_base)}`} sub="from extra spend" color="#a855f7" emoji="🚀" />
                     </div>
                   </div>
                 )}
 
-                {/* Risk / Reward bars */}
                 {projections && (
                   <div className="orion-card p-4 section-enter">
                     <p className="text-xs font-mono mb-3" style={{ color: "rgba(196,181,253,0.5)", letterSpacing: "0.1em" }}>RISK / REWARD ANALYSIS</p>
@@ -837,7 +758,6 @@ export default function OrionApp() {
                   </div>
                 )}
 
-                {/* What-If simulator */}
                 <div className="orion-card active-card p-5 flex flex-col gap-4">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
@@ -851,59 +771,45 @@ export default function OrionApp() {
                         style={{ background: whatIfActive ? "#c084fc" : "rgba(196,181,253,0.3)", left: whatIfActive ? "calc(100% - 14px)" : "2px" }} />
                     </div>
                   </div>
-
                   <div className={`flex flex-col gap-4 transition-opacity ${whatIfActive ? "opacity-100" : "opacity-40 pointer-events-none"}`}>
-                    {/* Marketing slider */}
                     <div>
                       <div className="flex justify-between mb-1">
                         <label className="orion-label" style={{ margin: 0 }}>Marketing Budget</label>
                         <span className="text-xs font-mono font-bold" style={{ color: "#a855f7" }}>{formatCurrency(whatIfMarketing)}</span>
                       </div>
-                      <input type="range" className="orion-range" min={10000}
-                        max={Math.max(bizInput.marketing_budget * 4, 500000)} step={10000}
-                        value={whatIfMarketing} onChange={(e) => setWhatIfMkt(+e.target.value)} />
+                      <input type="range" className="orion-range" min={10000} max={Math.max(bizInput.marketing_budget * 4, 500000)} step={10000} value={whatIfMarketing} onChange={(e) => setWhatIfMkt(+e.target.value)} />
                       {whatIfMarketing !== bizInput.marketing_budget && (
                         <p className="text-xs font-mono mt-1" style={{ color: whatIfMarketing > bizInput.marketing_budget ? "#22c55e" : "#f87171" }}>
                           {whatIfMarketing > bizInput.marketing_budget ? "▲" : "▼"} {Math.abs(((whatIfMarketing - bizInput.marketing_budget) / bizInput.marketing_budget) * 100).toFixed(0)}% vs current
                         </p>
                       )}
                     </div>
-                    {/* Employees slider */}
                     <div>
                       <div className="flex justify-between mb-1">
                         <label className="orion-label" style={{ margin: 0 }}>Employees</label>
                         <span className="text-xs font-mono font-bold" style={{ color: "#c084fc" }}>{whatIfEmployees}</span>
                       </div>
-                      <input type="range" className="orion-range" min={1}
-                        max={Math.max(bizInput.employees * 5, 50)} step={1}
-                        value={whatIfEmployees} onChange={(e) => setWhatIfEmp(+e.target.value)} />
+                      <input type="range" className="orion-range" min={1} max={Math.max(bizInput.employees * 5, 50)} step={1} value={whatIfEmployees} onChange={(e) => setWhatIfEmp(+e.target.value)} />
                     </div>
-                    <button className="btn-orion w-full flex items-center justify-center gap-2 py-2.5 text-sm"
-                      onClick={() => runSimulation(true)} disabled={running}>
+                    <button className="btn-orion w-full flex items-center justify-center gap-2 py-2.5 text-sm" onClick={() => runSimulation(true)} disabled={running}>
                       {running ? <><Loader2 size={14} className="animate-spin" />Simulating…</> : <><Zap size={14} />Run What-If</>}
                     </button>
                   </div>
                 </div>
 
-                {/* Custom scenario */}
-                <div className="orion-card p-4 flex flex-col gap-3"
-                  style={{ border: showCustom ? "1px solid rgba(192,132,252,0.35)" : undefined }}>
-                  <button className="flex items-center justify-between w-full"
-                    onClick={() => setShowCustom((v) => !v)}>
+                <div className="orion-card p-4 flex flex-col gap-3" style={{ border: showCustom ? "1px solid rgba(192,132,252,0.35)" : undefined }}>
+                  <button className="flex items-center justify-between w-full" onClick={() => setShowCustom((v) => !v)}>
                     <div className="flex items-center gap-2">
                       <MessageSquarePlus size={14} style={{ color: "#c084fc" }} />
                       <span className="text-xs font-mono font-bold" style={{ color: "#c084fc", letterSpacing: "0.1em" }}>CUSTOM SCENARIO</span>
                     </div>
-                    <ChevronRight size={12} className={`transition-transform`} style={{ color: "rgba(196,181,253,0.4)", transform: showCustom ? "rotate(90deg)" : "none" }} />
+                    <ChevronRight size={12} style={{ color: "rgba(196,181,253,0.4)", transform: showCustom ? "rotate(90deg)" : "none" }} />
                   </button>
-
                   {showCustom && (
                     <div className="flex flex-col gap-3 section-enter">
-                      <p className="text-xs" style={{ color: "rgba(196,181,253,0.5)" }}>
-                        Describe any scenario you want the agents to analyze — a new product launch, entering a new market, hiring a sales team, etc.
-                      </p>
+                      <p className="text-xs" style={{ color: "rgba(196,181,253,0.5)" }}>Describe any scenario you want the agents to analyze.</p>
                       <textarea className="orion-input resize-none" rows={3}
-                        placeholder="e.g. What if we launch a premium tier at 3x the price and target enterprise customers instead of SMBs?"
+                        placeholder="e.g. What if we launch a premium tier at 3x the price?"
                         value={customScenario} onChange={(e) => setCustomScenario(e.target.value)} />
                       <button className="btn-orion w-full flex items-center justify-center gap-2 py-2.5 text-sm"
                         onClick={() => runSimulation(false)} disabled={running || !customScenario.trim()}>
@@ -914,8 +820,7 @@ export default function OrionApp() {
                 </div>
 
                 {step === "result" && (
-                  <button className="btn-orion w-full flex items-center justify-center gap-2 py-3 text-sm section-enter"
-                    onClick={() => runSimulation(false)} disabled={running}>
+                  <button className="btn-orion w-full flex items-center justify-center gap-2 py-3 text-sm section-enter" onClick={() => runSimulation(false)} disabled={running}>
                     <RotateCcw size={14} /> Re-run Simulation
                   </button>
                 )}
@@ -925,9 +830,7 @@ export default function OrionApp() {
         </main>
 
         <footer className="border-t mt-12 py-5 text-center" style={{ borderColor: "rgba(139,92,246,0.1)" }}>
-          <p className="text-xs font-mono" style={{ color: "rgba(196,181,253,0.25)" }}>
-            ORION AI · Powered by Groq + LangChain · DSOC 2026
-          </p>
+          <p className="text-xs font-mono" style={{ color: "rgba(196,181,253,0.25)" }}>ORION AI · Powered by Groq + LangChain · DSOC 2026</p>
         </footer>
       </div>
     </div>

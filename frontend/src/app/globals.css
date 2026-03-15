@@ -158,6 +158,34 @@ html, body {
 
 .orion-input::placeholder { color: rgba(196, 181, 253, 0.35); }
 
+/* ── Rupee prefix input ───────────────────────────────────────────────────── */
+/* Wrapper holds the ₹ symbol + input side-by-side with correct spacing       */
+.rupee-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+/* The ₹ symbol — fixed position, never clipped */
+.rupee-sym {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 14px;
+  line-height: 1;
+  color: rgba(196, 181, 253, 0.5);
+  pointer-events: none;
+  user-select: none;
+  z-index: 1;
+}
+
+/* Input inside rupee wrapper — padding-left creates the gap after ₹ */
+.rupee-input {
+  padding-left: 30px !important;  /* 12px left edge + ~10px symbol width + 8px gap */
+}
+
 .orion-label {
   font-size: 11px;
   font-family: 'JetBrains Mono', monospace;
